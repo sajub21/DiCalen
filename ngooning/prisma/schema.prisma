@@ -1,0 +1,604 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// User Management
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  phone     String?  @unique
+  username  String?  @unique
+  name      String
+  avatar    String?
+  bio       String?
+  verified  Boolean  @default(false)
+  anonymous Boolean  @default(false)
+  
+  // Authentication
+  emailVerified DateTime?
+  passwordHash  String?
+  
+  // OAuth accounts
+  accounts Account[]
+  sessions Session[]
+  
+  // Profile settings
+  timezone     String @default("UTC")
+  language     String @default("en")
+  privacy      Privacy @default(PUBLIC)
+  
+  // Recovery tracking
+  recoveryStartDate DateTime?
+  currentStreak     Int @default(0)
+  longestStreak     Int @default(0)
+  totalDaysClean    Int @default(0)
+  
+  // Subscription
+  subscription Subscription?
+  
+  // Social features
+  friendsFrom   Friendship[] @relation("FriendshipFrom")
+  friendsTo     Friendship[] @relation("FriendshipTo")
+  groups        GroupMember[]
+  groupsOwned   Group[]
+  
+  // Content
+  posts         Post[]
+  comments      Comment[]
+  likes         Like[]
+  
+  // Calendar & Events
+  events        Event[]
+  eventRSVPs    EventRSVP[]
+  calendarSyncs CalendarSync[]
+  
+  // Habits & Goals
+  habits        Habit[]
+  goals         Goal[]
+  
+  // Trip planning
+  trips         Trip[]
+  tripMembers   TripMember[]
+  
+  // AI interactions
+  aiLogs        AILog[]
+  chatSessions  ChatSession[]
+  
+  // Notifications
+  notifications Notification[]
+  
+  // Files & Media
+  files         File[]
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@map("users")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+  
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("sessions")
+}
+
+model Subscription {
+  id               String           @id @default(cuid())
+  userId           String           @unique
+  stripeCustomerId String?          @unique
+  status           SubscriptionStatus
+  planId           String
+  priceId          String
+  currentPeriodStart DateTime
+  currentPeriodEnd   DateTime
+  cancelAtPeriodEnd  Boolean @default(false)
+  trialStart       DateTime?
+  trialEnd         DateTime?
+  
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@map("subscriptions")
+}
+
+// Social Features
+model Friendship {
+  id         String           @id @default(cuid())
+  fromUserId String
+  toUserId   String
+  status     FriendshipStatus @default(PENDING)
+  
+  fromUser User @relation("FriendshipFrom", fields: [fromUserId], references: [id], onDelete: Cascade)
+  toUser   User @relation("FriendshipTo", fields: [toUserId], references: [id], onDelete: Cascade)
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@unique([fromUserId, toUserId])
+  @@map("friendships")
+}
+
+model Group {
+  id          String      @id @default(cuid())
+  name        String
+  description String?
+  avatar      String?
+  privacy     Privacy     @default(PUBLIC)
+  category    GroupCategory
+  location    String?
+  ownerId     String
+  verified    Boolean     @default(false)
+  
+  owner   User          @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  members GroupMember[]
+  events  Event[]
+  posts   Post[]
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@map("groups")
+}
+
+model GroupMember {
+  id      String     @id @default(cuid())
+  userId  String
+  groupId String
+  role    GroupRole  @default(MEMBER)
+  
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  
+  joinedAt DateTime @default(now())
+  
+  @@unique([userId, groupId])
+  @@map("group_members")
+}
+
+model Post {
+  id        String    @id @default(cuid())
+  content   String
+  media     String[]  @default([])
+  authorId  String
+  groupId   String?
+  privacy   Privacy   @default(PUBLIC)
+  
+  author   User      @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  group    Group?    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  comments Comment[]
+  likes    Like[]
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@map("posts")
+}
+
+model Comment {
+  id       String @id @default(cuid())
+  content  String
+  authorId String
+  postId   String
+  
+  author User @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  post   Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+  likes  Like[]
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@map("comments")
+}
+
+model Like {
+  id        String    @id @default(cuid())
+  userId    String
+  postId    String?
+  commentId String?
+  
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  post    Post?    @relation(fields: [postId], references: [id], onDelete: Cascade)
+  comment Comment? @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  
+  createdAt DateTime @default(now())
+  
+  @@unique([userId, postId])
+  @@unique([userId, commentId])
+  @@map("likes")
+}
+
+// Calendar & Events
+model Event {
+  id          String      @id @default(cuid())
+  title       String
+  description String?
+  location    String?
+  startTime   DateTime
+  endTime     DateTime
+  timezone    String
+  allDay      Boolean     @default(false)
+  recurring   Boolean     @default(false)
+  recurrence  String?     // RRULE format
+  privacy     Privacy     @default(PUBLIC)
+  category    EventCategory
+  
+  organizerId String
+  groupId     String?
+  
+  organizer User       @relation(fields: [organizerId], references: [id], onDelete: Cascade)
+  group     Group?     @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  rsvps     EventRSVP[]
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@map("events")
+}
+
+model EventRSVP {
+  id       String     @id @default(cuid())
+  userId   String
+  eventId  String
+  status   RSVPStatus @default(MAYBE)
+  
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@unique([userId, eventId])
+  @@map("event_rsvps")
+}
+
+model CalendarSync {
+  id           String         @id @default(cuid())
+  userId       String
+  provider     CalendarProvider
+  calendarId   String
+  accessToken  String         @db.Text
+  refreshToken String?        @db.Text
+  expiresAt    DateTime?
+  enabled      Boolean        @default(true)
+  
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@unique([userId, provider, calendarId])
+  @@map("calendar_syncs")
+}
+
+// Habits & Goals
+model Habit {
+  id          String        @id @default(cuid())
+  userId      String
+  name        String
+  description String?
+  category    HabitCategory
+  frequency   Frequency
+  target      Int           @default(1)
+  unit        String?
+  
+  user    User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  entries HabitEntry[]
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@map("habits")
+}
+
+model HabitEntry {
+  id      String   @id @default(cuid())
+  habitId String
+  date    DateTime @db.Date
+  value   Int      @default(1)
+  notes   String?
+  
+  habit Habit @relation(fields: [habitId], references: [id], onDelete: Cascade)
+  
+  createdAt DateTime @default(now())
+  
+  @@unique([habitId, date])
+  @@map("habit_entries")
+}
+
+model Goal {
+  id          String     @id @default(cuid())
+  userId      String
+  title       String
+  description String?
+  category    GoalCategory
+  target      String
+  deadline    DateTime?
+  completed   Boolean    @default(false)
+  completedAt DateTime?
+  
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@map("goals")
+}
+
+// Trip Planning
+model Trip {
+  id          String       @id @default(cuid())
+  title       String
+  description String?
+  destination String
+  startDate   DateTime
+  endDate     DateTime
+  budget      Float?
+  currency    String       @default("GBP")
+  privacy     Privacy      @default(PRIVATE)
+  status      TripStatus   @default(PLANNING)
+  
+  organizerId String
+  organizer   User         @relation(fields: [organizerId], references: [id], onDelete: Cascade)
+  members     TripMember[]
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@map("trips")
+}
+
+model TripMember {
+  id     String @id @default(cuid())
+  userId String
+  tripId String
+  role   TripRole @default(MEMBER)
+  
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  trip Trip @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  
+  joinedAt DateTime @default(now())
+  
+  @@unique([userId, tripId])
+  @@map("trip_members")
+}
+
+// AI & Chat
+model ChatSession {
+  id        String      @id @default(cuid())
+  userId    String
+  title     String?
+  archived  Boolean     @default(false)
+  
+  user     User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages ChatMessage[]
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@map("chat_sessions")
+}
+
+model ChatMessage {
+  id        String      @id @default(cuid())
+  sessionId String
+  role      MessageRole
+  content   String      @db.Text
+  metadata  Json?
+  
+  session ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  
+  createdAt DateTime @default(now())
+  
+  @@map("chat_messages")
+}
+
+model AILog {
+  id        String   @id @default(cuid())
+  userId    String
+  action    String
+  input     String?  @db.Text
+  output    String?  @db.Text
+  metadata  Json?
+  duration  Int?     // milliseconds
+  
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  createdAt DateTime @default(now())
+  
+  @@map("ai_logs")
+}
+
+// Notifications
+model Notification {
+  id       String             @id @default(cuid())
+  userId   String
+  type     NotificationType
+  title    String
+  message  String
+  data     Json?
+  read     Boolean            @default(false)
+  readAt   DateTime?
+  
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  createdAt DateTime @default(now())
+  
+  @@map("notifications")
+}
+
+// Files & Media
+model File {
+  id       String   @id @default(cuid())
+  userId   String
+  filename String
+  url      String
+  mimeType String
+  size     Int
+  metadata Json?
+  
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  createdAt DateTime @default(now())
+  
+  @@map("files")
+}
+
+// Enums
+enum Privacy {
+  PUBLIC
+  FRIENDS
+  PRIVATE
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  CANCELED
+  INCOMPLETE
+  INCOMPLETE_EXPIRED
+  PAST_DUE
+  TRIALING
+  UNPAID
+}
+
+enum FriendshipStatus {
+  PENDING
+  ACCEPTED
+  BLOCKED
+}
+
+enum GroupCategory {
+  RECOVERY
+  FITNESS
+  SOCIAL
+  HOBBY
+  PROFESSIONAL
+  TRAVEL
+  EDUCATION
+  OTHER
+}
+
+enum GroupRole {
+  OWNER
+  ADMIN
+  MODERATOR
+  MEMBER
+}
+
+enum EventCategory {
+  MEETUP
+  ACTIVITY
+  TRIP
+  WORKSHOP
+  SOCIAL
+  FITNESS
+  RECOVERY
+  OTHER
+}
+
+enum RSVPStatus {
+  GOING
+  NOT_GOING
+  MAYBE
+}
+
+enum CalendarProvider {
+  GOOGLE
+  APPLE
+  OUTLOOK
+}
+
+enum HabitCategory {
+  HEALTH
+  FITNESS
+  MENTAL
+  SOCIAL
+  PRODUCTIVITY
+  RECOVERY
+  OTHER
+}
+
+enum Frequency {
+  DAILY
+  WEEKLY
+  MONTHLY
+}
+
+enum GoalCategory {
+  RECOVERY
+  HEALTH
+  FITNESS
+  SOCIAL
+  CAREER
+  EDUCATION
+  PERSONAL
+  OTHER
+}
+
+enum TripStatus {
+  PLANNING
+  CONFIRMED
+  ACTIVE
+  COMPLETED
+  CANCELED
+}
+
+enum TripRole {
+  ORGANIZER
+  MEMBER
+}
+
+enum MessageRole {
+  USER
+  ASSISTANT
+  SYSTEM
+}
+
+enum NotificationType {
+  FRIEND_REQUEST
+  EVENT_INVITATION
+  TRIP_INVITATION
+  GROUP_INVITATION
+  MESSAGE
+  ACHIEVEMENT
+  REMINDER
+  SYSTEM
+}
